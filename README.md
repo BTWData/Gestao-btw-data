@@ -194,7 +194,7 @@ O **BTW Data Company** é uma **plataforma SaaS multi-tenant** completa e open-s
 
 1. **Clone o repositório**
 ```bash
-git clone https://github.com/AstraOnlineWeb/astracampaign.git
+git clone https://github.com/BTWData/Gestao-btw-data
 cd astracampaign
 ```
 
