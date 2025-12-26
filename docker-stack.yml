@@ -1,106 +1,76 @@
 version: '3.8'
 
 services:
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      - POSTGRES_DB=contacts
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - network_public
-    deploy:
-      placement:
-        constraints:
-          - node.role == manager
-      restart_policy:
-        condition: on-failure
-
-  redis:
-    image: redis:7-alpine
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
-    volumes:
-      - redis_data:/data
-    networks:
-      - network_public
-    deploy:
-      placement:
-        constraints:
-          - node.role == manager
-      restart_policy:
-        condition: on-failure
-
+  # --- BACKEND ---
   backend:
-    image: work-backend:v0.0.2-20251020c
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: astra_backend
+    restart: always
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/contacts?schema=public
-      REDIS_URL: redis://redis:6379
-      REDIS_PREFIX: work_app
-      PORT: 3001
-      NODE_ENV: production
-      JWT_SECRET: your-super-secret-jwt-key-at-least-32-characters-long-trecofantastico
-      JWT_EXPIRES_IN: 24h
-      DEFAULT_WAHA_HOST: ""
-      DEFAULT_WAHA_API_KEY: ""
-      DEFAULT_EVOLUTION_HOST: ""
-      DEFAULT_EVOLUTION_API_KEY: ""
-      DEFAULT_COMPANY_NAME: ""
-      DEFAULT_PAGE_TITLE: "Sistema de Gestão de Contatos"
-      ALLOWED_ORIGINS: https://gestao.btwdata.tech,http://gestao.btwdata.tech,http://work_frontend,http://work_frontend:80
-    networks:
-      - network_public
-    depends_on:
-      - postgres
-      - redis
+      - DATABASE_URL=${DATABASE_URL}
+      - JWT_SECRET=${JWT_SECRET}
+      - PORT=3001
+      - NODE_ENV=production
+      # Permite que o frontend acesse o backend
+      - ALLOWED_ORIGINS=https://gestao.btwdata.tech,http://localhost
     volumes:
       - contacts_data:/app/data
       - uploads_data:/app/uploads
       - backup_data:/app/backups
-    ports:
-      - 3002:3001
-    deploy:
-      replicas: 1
-      placement:
-        constraints:
-          - node.role == manager
-      restart_policy:
-        condition: on-failure
-      labels:
-        - traefik.enable=true
-        - traefik.docker.network=network_public
-        - traefik.http.routers.work-backend.rule=Host(`gestao.btwdata.tech`) && PathPrefix(`/api`)
-        - traefik.http.routers.work-backend.entrypoints=web,websecure
-        - traefik.http.routers.work-backend.tls=true
-        - traefik.http.routers.work-backend.tls.certresolver=letsencryptresolver
-        - traefik.http.services.work-backend.loadbalancer.server.port=3001
-
-  frontend:
-    image: work-frontend:v0.0.2-20251020a
     networks:
-      - network_public
-    depends_on:
-      - backend
-    deploy:
-      replicas: 1
-      placement:
-        constraints:
-          - node.role == manager
-      restart_policy:
-        condition: on-failure
-      labels:
-        - traefik.enable=true
-        - traefik.docker.network=network_public
-        - traefik.http.routers.work-frontend.rule=Host(`gestao.btwdata.tech`)
-        - traefik.http.routers.work-frontend.entrypoints=web,websecure
-        - traefik.http.routers.work-frontend.tls=true
-        - traefik.http.routers.work-frontend.tls.certresolver=letsencryptresolver
-        - traefik.http.services.work-frontend.loadbalancer.server.port=80
+      - traefik_public
+      - internal_net
+    labels:
+      - "traefik.enable=true"
+      # O Backend atende em /api
+      - "traefik.http.routers.gestao-api.rule=Host(`gestao.btwdata.tech`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.gestao-api.entrypoints=websecure"
+      - "traefik.http.routers.gestao-api.tls=true"
+      - "traefik.http.routers.gestao-api.tls.certresolver=le"
+      - "traefik.http.services.gestao-api.loadbalancer.server.port=3001"
 
-networks:
-  network_public:
-    external: true
+  # --- FRONTEND ---
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: astra_frontend
+    restart: always
+    networks:
+      - traefik_public
+    labels:
+      - "traefik.enable=true"
+      # O Frontend atende todo o resto
+      - "traefik.http.routers.gestao-web.rule=Host(`gestao.btwdata.tech`)"
+      - "traefik.http.routers.gestao-web.entrypoints=websecure"
+      - "traefik.http.routers.gestao-web.tls=true"
+      - "traefik.http.routers.gestao-web.tls.certresolver=le"
+      - "traefik.http.services.gestao-web.loadbalancer.server.port=80"
+
+  # --- BANCO DE DADOS (Opcional se já tiver externo) ---
+  postgres:
+    image: postgres:16-alpine
+    container_name: astra_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASS}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - internal_net
+
+  redis:
+    image: redis:7-alpine
+    container_name: astra_redis
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - internal_net
 
 volumes:
   postgres_data:
@@ -108,3 +78,9 @@ volumes:
   contacts_data:
   uploads_data:
   backup_data:
+
+networks:
+  traefik_public:
+    external: true
+  internal_net:
+    driver: bridge

@@ -50,7 +50,7 @@ npx prisma db seed || echo "⚠️ Seed failed, continuing..."
 
 # Gerar cliente prisma
 echo "🔧 Generating Prisma client..."
-npx prisma generate || echo "⚠️ Prisma generate failed, continuing..."
+
 
 # Skip admin user creation - now handled by setup process
 

@@ -1,39 +1,31 @@
-FROM node:20-alpine AS builder
+FROM node:20-alpine
 
 WORKDIR /app
+
+# Instala dependências do sistema necessárias para o Prisma/Bcrypt
+RUN apk add --no-cache openssl python3 make g++
 
 COPY package*.json ./
-RUN npm install
+
+# Instala dependências e gera o Prisma Client
+RUN npm ci
 
 COPY . .
+
+# Gera o cliente Prisma durante o build
 RUN npx prisma generate
+
+# Compila o TypeScript
 RUN npm run build
-RUN npm prune --production
 
-FROM node:20-alpine AS runtime
+# --- CORREÇÃO DE PERMISSÃO ---
+# Dá permissão total para o usuário node na pasta do app
+RUN chown -R node:node /app
 
-RUN apk add --no-cache openssl postgresql-client
-
-WORKDIR /app
-
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S nodejs -u 1001
-
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/prisma ./prisma
-COPY start.sh ./start.sh
-
-RUN mkdir -p /app/data /app/uploads /app/backups && chown -R nodejs:nodejs /app/data /app/uploads /app/backups
-COPY uploads/default_icon.png /app/uploads/default_icon.png
-COPY uploads/default_favicon.png /app/uploads/default_favicon.png
-RUN chmod +x start.sh && chown nodejs:nodejs start.sh
-RUN chown -R nodejs:nodejs /app/node_modules/@prisma || true
-RUN chmod -R 755 /app/node_modules/@prisma || true
-
-USER nodejs
+# Muda para o usuário seguro
+USER node
 
 EXPOSE 3001
 
-CMD ["./start.sh"]
+# Usa o script start.sh (certifique-se que ele tem permissão de execução: chmod +x start.sh)
+CMD ["sh", "start.sh"]
